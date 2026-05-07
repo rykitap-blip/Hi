@@ -1,0 +1,253 @@
+-- ================================================================
+--  Ruz Bomb Jump (Flawless & Auto-Controlled)
+--  [Q] or Button to Bomb Jump
+--  • Auto-equip: 0.01s (Ultra Fast)
+--  • Jump Power: 62
+--  • Delay: 0
+--  • Auto bomb retriever every 2 seconds.
+--  • Dynamic Cooldown: Button locks if the bomb is not in inventory.
+-- ================================================================
+
+local Players           = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace         = game:GetService("Workspace")
+local UserInputService  = game:GetService("UserInputService")
+local TweenService      = game:GetService("TweenService")
+local RunService        = game:GetService("RunService")
+
+local player  = Players.LocalPlayer
+local cooldown = false
+local isExecuting = false
+
+-- ==========================================
+-- AUTO BOMB RETRIEVER (EVERY 2 SECONDS)
+-- ==========================================
+task.spawn(function()
+	while true do
+		task.wait(2) -- Check every 2 seconds
+		local char = player.Character
+		local hasBomb = player.Backpack:FindFirstChild("FakeBomb") or (char and char:FindFirstChild("FakeBomb"))
+		
+		if not hasBomb then
+			pcall(function()
+				ReplicatedStorage.Remotes.Extras.ReplicateToy:InvokeServer("FakeBomb")
+			end)
+		end
+	end
+end)
+
+-- ==========================================
+-- ERROR NOTIFICATION
+-- ==========================================
+local function ShowErrorNotification(message)
+	local screenGui = player.PlayerGui:FindFirstChild("RuzNotif") or Instance.new("ScreenGui", player.PlayerGui)
+	screenGui.Name = "RuzNotif"
+	
+	local notifFrame = Instance.new("Frame", screenGui)
+	notifFrame.Size = UDim2.new(0, 280, 0, 40)
+	notifFrame.Position = UDim2.new(0.5, -140, 0.85, 0)
+	notifFrame.BackgroundColor3 = Color3.fromRGB(20, 0, 0)
+	notifFrame.BorderSizePixel = 0
+	Instance.new("UICorner", notifFrame).CornerRadius = UDim.new(0, 8)
+	
+	local text = Instance.new("TextLabel", notifFrame)
+	text.Size = UDim2.new(1, 0, 1, 0)
+	text.BackgroundTransparency = 1
+	text.Text = message
+	text.TextColor3 = Color3.fromRGB(255, 80, 80)
+	text.Font = Enum.Font.GothamBold
+	text.TextSize = 12
+	
+	TweenService:Create(notifFrame, TweenInfo.new(0.3), {Position = UDim2.new(0.5, -140, 0.8, 0)}):Play()
+	task.delay(2.5, function()
+		local t = TweenService:Create(notifFrame, TweenInfo.new(0.5), {BackgroundTransparency = 1, Position = UDim2.new(0.5, -140, 0.85, 0)})
+		TweenService:Create(text, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
+		t:Play()
+		t.Completed:Wait()
+		notifFrame:Destroy()
+	end)
+end
+
+-- ==========================================
+-- FAST EQUIP (0.01s)
+-- ==========================================
+local function EquipBomb()
+	local char = player.Character
+	if not char then return false end
+	if char:FindFirstChild("FakeBomb") then return true end
+	
+	local tool = player.Backpack:FindFirstChild("FakeBomb")
+	if tool then
+		char.Humanoid:EquipTool(tool)
+		task.wait(0.01) -- Ultra fast equip speed
+		return true
+	end
+	return false
+end
+
+-- ==========================================
+-- GUI DESIGN
+-- ==========================================
+local oldGui = game.CoreGui:FindFirstChild("Ruz_BombJump")
+if oldGui then oldGui:Destroy() end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "Ruz_BombJump"
+gui.Parent = game.CoreGui
+
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 220, 0, 110)
+mainFrame.Position = UDim2.new(0.5, -110, 0.7, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+mainFrame.BackgroundTransparency = 0.25
+mainFrame.BorderSizePixel = 0
+mainFrame.Active = true
+mainFrame.Parent = gui
+
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+local frameStroke = Instance.new("UIStroke", mainFrame)
+frameStroke.Color = Color3.fromRGB(255, 255, 255); frameStroke.Transparency = 0.8
+
+local title = Instance.new("TextLabel", mainFrame)
+title.Size = UDim2.new(1, 0, 0, 35)
+title.BackgroundTransparency = 1
+title.Text = "Ruz Bomb Jump"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold; title.TextSize = 13
+
+local separator = Instance.new("Frame", mainFrame)
+separator.Size = UDim2.new(0.9, 0, 0, 1); separator.Position = UDim2.new(0.05, 0, 0, 35)
+separator.BackgroundColor3 = Color3.fromRGB(255, 255, 255); separator.BackgroundTransparency = 0.8; separator.BorderSizePixel = 0
+
+local button = Instance.new("TextButton", mainFrame)
+button.Size = UDim2.new(0, 180, 0, 45); button.Position = UDim2.new(0.5, -90, 0, 50)
+button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+button.Text = "Jump [Q]"
+button.TextColor3 = Color3.fromRGB(200, 200, 200)
+button.Font = Enum.Font.GothamSemibold; button.TextSize = 15; button.AutoButtonColor = false
+
+Instance.new("UICorner", button).CornerRadius = UDim.new(0, 8)
+local btnStroke = Instance.new("UIStroke", button)
+btnStroke.Color = Color3.fromRGB(0, 170, 255); btnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; btnStroke.Transparency = 0.4
+
+-- Draggable Feature
+local dragging, dragInput, dragStart, startPos
+mainFrame.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true; dragStart = input.Position; startPos = mainFrame.Position
+		input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
+	end
+end)
+mainFrame.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end end)
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput and dragging then
+		local delta = input.Position - dragStart
+		mainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+-- ==========================================
+-- DYNAMIC BUTTON CONTROL (Detects manual usage)
+-- ==========================================
+RunService.Heartbeat:Connect(function()
+	if isExecuting then return end -- Let the script manage the button during execution
+
+	local char = player.Character
+	local hasBomb = player.Backpack:FindFirstChild("FakeBomb") or (char and char:FindFirstChild("FakeBomb"))
+
+	if hasBomb then
+		cooldown = false
+		button.Text = "Jump [Q]"
+		button.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+		btnStroke.Color = Color3.fromRGB(0, 170, 255)
+	else
+		cooldown = true
+		button.Text = "Waiting for Bomb..."
+		button.BackgroundColor3 = Color3.fromRGB(50, 20, 20)
+		btnStroke.Color = Color3.fromRGB(255, 50, 50)
+	end
+end)
+
+-- ==========================================
+-- BOMB JUMP FUNCTION
+-- ==========================================
+local function DoBombJump()
+	if cooldown or isExecuting then return end
+	isExecuting = true -- Start execution
+
+	-- Equip check
+	if not EquipBomb() then
+		isExecuting = false
+		ShowErrorNotification("You don't have the Bomb. Please Purchase it.")
+		return
+	end
+
+	local char = player.Character
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	local bomb = char and char:FindFirstChild("FakeBomb")
+
+	if not hrp or not humanoid or not bomb then 
+		isExecuting = false
+		return 
+	end
+
+	local snapshotHandles = {}
+	for _, child in ipairs(Workspace:GetChildren()) do
+		if child.Name == "Handle" then snapshotHandles[child] = true end
+	end
+
+	-- Update Button Visuals
+	button.Text = "Jumping..."
+	button.BackgroundColor3 = Color3.fromRGB(50, 20, 20)
+	btnStroke.Color = Color3.fromRGB(255, 50, 50)
+
+	-- Throw Bomb (0 delay)
+	local lookDir = hrp.CFrame.LookVector
+	local bombPos = hrp.Position + Vector3.new(lookDir.X * 1.5, -3, lookDir.Z * 1.5)
+	bomb.Remote:FireServer(CFrame.new(bombPos), 50)
+
+	-- Find our Handle
+	local myHandle = nil
+	local timeout = 2
+	local elapsed = 0
+	
+	while elapsed < timeout do
+		for _, child in ipairs(Workspace:GetChildren()) do
+			if child.Name == "Handle" and not snapshotHandles[child] then
+				myHandle = child
+				break
+			end
+		end
+		if myHandle then break end
+		elapsed += task.wait() -- Instant wait
+	end
+
+	if myHandle then
+		-- Execute Jump (0 delay, 62 Power)
+		humanoid:ChangeState(Enum.HumanoidStateType.Freefall)
+		task.wait(0)
+		hrp.AssemblyLinearVelocity = Vector3.new(
+			hrp.AssemblyLinearVelocity.X,
+			62,
+			hrp.AssemblyLinearVelocity.Z
+		)
+
+		-- Wait until the bomb is destroyed (Heartbeat will take over afterwards)
+		while myHandle and myHandle.Parent do 
+			task.wait(0.1) 
+		end
+	end
+
+	isExecuting = false -- Hand control back to Dynamic Button Control
+end
+
+-- Bind Button and Key
+button.MouseButton1Click:Connect(DoBombJump)
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if not gpe and input.KeyCode == Enum.KeyCode.Q then
+		DoBombJump()
+	end
+end)
+
+print("Ruz Bomb Jump v4 (Flawless) Loaded!")
